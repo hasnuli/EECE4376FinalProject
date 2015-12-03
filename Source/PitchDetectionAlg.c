@@ -145,16 +145,25 @@ void fft( complex *v, int n, complex *tmp )
 
 //Calculate lag amount - how many samples necessary to cover desired frequency range
 //A signal at 350Hz will repeat after 126 samples, at 63Hz, 700 samples
-/*At the fast freq, semitones are only 15 Hz apart...
+/*At the fast freq, semitones are only 15 sample apart...
+ *
  * At lower ones they are 40 apart..
  */
+//Array A/B holds .5 seconds worth.
 //We are taking arrays of 882 samples, 50Hz
 //Currently will calculate 574 autocorrelations (269,675 multiplications + 574 additions) - leave at this for now..
 //If I calculate lag every 5 sample jumps, it takes 54,165 multiplications + 115 additions ... which is a lot still?
-//Every 10 samples - 27,000 multiplicaitons + 57 additions..
-int maxLag = SAMPLERATE/CUTOFFL; //700 - shift by 700 samples will bring max correlation if at lowest freq
-int minLag = SAMPLERATE/CUTOFFH; //126
+//Every 10 samples - 27,000 multiplications + 57 additions..
+int maxLag = SAMPLERATE/CUTOFFL + 20; //700 + 20 - shift by 700 samples will bring max correlation if at lowest freq
+int minLag = SAMPLERATE/CUTOFFH - 20; //126 - 20
 
+/*
+ * If we cut sampling freq in half, freq = 22.05k;
+ * Update freqs:
+ * 			50Hz = 441 samples
+ * 			30Hz = 735 samples
+ *
+ */
 
 
 Mean = compute_mean();
@@ -164,7 +173,7 @@ Variance = compute_variance();
   for (i=1; i<=NUM_LAG; i++)
   {
     ac_value = compute_autoc(i);
-    workingArray
+    workingArray[i] = ac+value;
   }
 
 
@@ -187,7 +196,8 @@ double compute_variance(void)
   return(var);
 }
 
-//Calculate mean of TunerArray
+
+//Calculate mean of TunerArray values
 double compute_mean(void)
 {
   double   mean;        // Computed mean value to be returned
