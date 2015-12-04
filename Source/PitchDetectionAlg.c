@@ -137,7 +137,7 @@ double     Variance;               // Variance of series X
 //Autocorrelation
 /*
  * Credit to:
- *
+ * http://www.csee.usf.edu/~christen/tools/autoc.c
  *	https://gerrybeauregard.wordpress.com/2013/07/15/high-accuracy-monophonic-pitch-estimation-using-normalized-autocorrelation/
 */
 
@@ -220,6 +220,7 @@ int autocorrelation(){
 				  }
 		  }
 	  }
+	  printf("Best phase lag is %d", bestP);
 	  return bestP;
 	  //bestP is our answer!
 }
