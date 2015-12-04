@@ -13,18 +13,19 @@
 #include "../../BBBIO/BBBio_lib/BBBiolib.h"
 
 // define needed constants
-#define RECORDING_SAMPLERATE		96000*16
-#define RECORDING_PERIOD_NS			((1/RECORDING_SAMPLERATE)*16*1000000000)
-#define TUNER_SAMPLERATE			22225*16
-#define TUNER_PERIOD_NS				((1/TUNER_SAMPLERATE)*16*1000000000)
-#define AUDIOCAPE_BITRATE			96000*16
+#define BIT_DEPTH					16
+#define RECORDING_SAMPLERATE		96000*BIT_DEPTH
+#define RECORDING_PERIOD_NS			((1/RECORDING_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define TUNER_SAMPLERATE			22225*BIT_DEPTH
+#define TUNER_PERIOD_NS				((1/TUNER_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define AUDIOCAPE_BITRATE			96000*BIT_DEPTH
 #define AUDIOCAPE_PERIOD_NS			(1/AUDIOCAPE_BITRATE)*1000000000
 #define RECORDING_PERIOD_DIFFERENCE	RECORDING_PERIOD_NS-AUDIOCAPE_PERIOD_NS
 #define TUNER_PERIOD_DIFFERENCE		TUNER_PERIOD_NS-AUDIOCAPE_PERIOD_NS
-#define BIT_DEPTH					16
-#define TUNER_UPDATE				50
+#define TUNER_UPDATE				40
 #define TUNER_UPDATE_PERIOD_NS		(1/TUNER_UPDATE)*1000000000
-#define	TUNER_ARRAY_SIZE			(TUNER_SAMPLERATE/16)/TUNER_UPDATE
+#define	TUNER_ARRAY_SIZE			(TUNER_SAMPLERATE/BIT_DEPTH)/TUNER_UPDATE
+#define FILE_NAME 					"file.bin"
 
 static const uint64_t RECORDING_ARRAY_SIZE=((uint64_t)RECORDING_SAMPLERATE*BIT_DEPTH*60*3)+2;
 static char tunerArrayAChar[TUNER_ARRAY_SIZE];
@@ -92,13 +93,13 @@ void readAudioData(int mArraySize, char mArray[], int bool){
 				timeDifferenceNS=((1000000000)*(currentTime.tv_sec-lastChange.tv_sec))+(currentTime.tv_nsec-lastChange.tv_nsec);
 			}
 			numOfPeriods=timeDifferenceNS/audioPeriod;
-			for(i=0;(i<numOfPeriods)&&(bitsRead<16);++i){
+			for(i=0;(i<numOfPeriods)&&(bitsRead<BIT_DEPTH);++i){
 				mArray[curPos]=cur;
 				++curPos;
 				++bitsRead;
 			}
 			prev=cur;
-			if(bitsRead>16){
+			if(bitsRead>BIT_DEPTH){
 				bitsRead=0;
 				currentTime.tv_nsec += difference;
 				clock_nanosleep(CLOCK_REALTIME,TIMER_ABSTIME,&currentTime,NULL);
@@ -116,7 +117,7 @@ void *recordingState(void *arg){
 	char recordingArray[RECORDING_ARRAY_SIZE];
 	FILE* outfile;
 	readAudioData(RECORDING_ARRAY_SIZE,recordingArray,0);
-	outfile=fopen("file.bin","wb");
+	outfile=fopen(FILE_NAME,"wb");
 	if(outfile==NULL){
 		printf("Error opening file");
 		return NULL;
@@ -151,9 +152,10 @@ void *TunerStateReader(void *arg){
 				}
 				++i;
 			}
-			tunerArrayA[i/16]=temp;
+			tunerArrayA[i/BIT_DEPTH]=temp;
 		}
 		pthread_mutex_unlock(&mutexA);
+		currentArray='B';
 	}
 	else{
 		pthread_mutex_lock(&mutexB);
@@ -168,9 +170,10 @@ void *TunerStateReader(void *arg){
 					temp=temp+(2^(BIT_DEPTH-j-1));
 				}
 			}
-			tunerArrayB[i/16]=temp;
+			tunerArrayB[i/BIT_DEPTH]=temp;
 			pthread_mutex_unlock(&mutexB);
 		}
+		currentArray='A';
 	}
 	return NULL;
 }

@@ -1,4 +1,4 @@
-Source/main.d: ../Source/main.c \
+Source/playback.d: ../Source/playback.c \
  ../Source/../../BBBIO/BBBio_lib/BBBiolib.h \
  ../Source/../../BBBIO/BBBio_lib/BBBiolib_PWMSS.h \
  ../Source/../../BBBIO/BBBio_lib/BBBiolib_McSPI.h \

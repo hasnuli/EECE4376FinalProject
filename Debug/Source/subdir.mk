@@ -6,17 +6,20 @@
 C_SRCS += \
 ../Source/PitchDetectionAlg.c \
 ../Source/Recording.c \
-../Source/main.c 
+../Source/main.c \
+../Source/playback.c 
 
 OBJS += \
 ./Source/PitchDetectionAlg.o \
 ./Source/Recording.o \
-./Source/main.o 
+./Source/main.o \
+./Source/playback.o 
 
 C_DEPS += \
 ./Source/PitchDetectionAlg.d \
 ./Source/Recording.d \
-./Source/main.d 
+./Source/main.d \
+./Source/playback.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
