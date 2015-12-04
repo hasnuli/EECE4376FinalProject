@@ -10,22 +10,23 @@
 // Assumption that audio info will be read into an array and this algorithm
 // will act on the array and produce a frequency
 
-#define SAMPLERATE 22550;
-#define UPDATERATE 50; //Has to be less than 30?
-#define PI 3.14159256;
-#define MAXFREQ 350.0;	//Highest note we're reaching (F above E4)
-#define MINFREQ 63.0;	//Lowest note we're reaching (B below E2)
-#define MAXP 360; // 22250/63 = 353 + some room = number of samples in a period
-#define MINP 55; // 22250/350 = 63 - room
-#define SUBMULTTHREAD 0.90;
+#define SAMPLERATE 22550
+#define UPDATERATE 50 //Has to be less than 30?
+#define PI 3.14159256
+#define MAXFREQ 350.0	//Highest note we're reaching (F above E4)
+#define MINFREQ 63.0	//Lowest note we're reaching (B below E2)
+#define MAXP 360 // 22250/63 = 353 + some room = number of samples in a period
+#define MINP 55 // 22250/350 = 63 - room
+#define SUBMULTTHRESH 0.90
 
 //some global variables I have already all at predetermined length of numSamples
 //These should actually all probably be floats?
-int[] TunerArrayA;
-int[] TunerArrayB;
-int numSamples = SAMPLERATE/UPDATERATE;
+//int[] TunerArrayA;
+//int[] TunerArrayB;
+#define numSamples SAMPLERATE/UPDATERATE
 
-float[numSamples] lagArray; //My working array
+static int lagArray[numSamples] ; //My working array
+
 double     Mean;                   // Mean of series X
 double     Variance;               // Variance of series X
 
@@ -40,25 +41,25 @@ double     Variance;               // Variance of series X
 // Credit to
 
 		//Use Hann window on Tuner Array, cuts off edges
-		for (int i = 0; i < numSamples; i++) {
-			double multiplier = 0.5 * (1 - cos(2*PI*i/(numSamples-1)));
-			TunerArrayA[i] = multiplier * TunerArrayA[i];
-		}
+//		for (int i = 0; i < numSamples; i++) {
+//			double multiplier = 0.5 * (1 - cos(2*PI*i/(numSamples-1)));
+//			TunerArrayA[i] = multiplier * TunerArrayA[i];
+//		}
 
 
 
 
 		//Low and High pass filtering
 		//LOW_PASS
-		{
-			float RC = 1.0/(MINFREQ*2*3.14);
-			float dt = 1.0/SAMPLERATE;
-			float alpha = dt/(RC+dt);
-			filteredArray[0] = data.recordedSamples[0];
-			for(i=1; i<numSamples; i++){
-				filteredArray[i] = lagArray[i-1] + (alpha*(TunerArrayA[i] - lagArray[i-1]));
-			}
-		}
+//		{
+//			float RC = 1.0/(MINFREQ*2*3.14);
+//			float dt = 1.0/SAMPLERATE;
+//			float alpha = dt/(RC+dt);
+//			filteredArray[0] = data.recordedSamples[0];
+//			for(i=1; i<numSamples; i++){
+//				filteredArray[i] = lagArray[i-1] + (alpha*(TunerArrayA[i] - lagArray[i-1]));
+//			}
+//		}
 
 		// HIGH_PASS
 		/*
@@ -81,11 +82,11 @@ double     Variance;               // Variance of series X
 
 
 
-		float freq = 0;
-		for (i = 1; i<numSamples; i++){
-			if(lagArray[i] > freq)
-				freq - lagArray[i];
-		}
+//		float freq = 0;
+//		for (i = 1; i<numSamples; i++){
+//			if(lagArray[i] > freq)
+//				freq - lagArray[i];
+//		}
 
 		//max of the frequency should be the frequency
 
@@ -168,82 +169,90 @@ double     Variance;               // Variance of series X
 //Variance = compute_variance();
 
 // Compute and output AC value (rho) for series X of length N
-  for (int p=MINP-1; p<=MAXP+1; p++)
-  {
-	  double ac = 0.0;        // Standard auto-correlation
-	  double sumSqBeg = 0.0;  // Sum of squares of beginning part
-	  double sumSqEnd = 0.0;  // Sum of squares of ending part
+int autocorrelation(){
+	int bestP = MINP;
+	int p;
+	  for (p=MINP-1; p<=MAXP+1; p++)
+	  {
+		  double ac = 0.0;        // Standard auto-correlation
+		  double sumSqBeg = 0.0;  // Sum of squares of beginning part
+		  double sumSqEnd = 0.0;  // Sum of squares of ending part
 
-	  for (int i=0; i<(numSamples - p); i++) {
-		  ac += x[i]*x[i+p];
-		  sumSqBeg += x[i]*x[i];
-		  sumSqEnd += x[i+p]*x[i+p];
+		  int i;
+		  for (i=0; i<(numSamples - p); i++) {
+			  ac += lagArray[i]*lagArray[i+p];
+			  sumSqBeg += lagArray[i]*lagArray[i];
+			  sumSqEnd += lagArray[i+p]*lagArray[i+p];
+		  }
+
+		  lagArray[p-MINP] = ac / sqrt( sumSqBeg * sumSqEnd );
+		  //Period/num of Samples long is array's max + MINP
+
+		  //Find peak
+
+		  int j;
+		  for (j = MINP; j <= MAXP; j++ ) {
+			  if (lagArray[j] > lagArray[bestP])
+				  bestP = j;
+		  }
+
+		  //Could do some interpolating, not going to...
+
+		  //Check if freq found is a harmonic by looking at other peaks
+		  int maxMul = bestP/MINP;
+		  int found = 0;
+		  int mul;
+		  for (mul = maxMul; found == 0 && mul >= 1; mul--) {
+				  int subsAllStrong = 1;
+
+				  //For each multiple...
+				  int k;
+				  for (k = 1; k < mul; k++) {
+					  int subMulP = (int)(k*bestP/mul+0.5);
+					  if (lagArray[subMulP] < SUBMULTTHRESH*lagArray[bestP])
+						  subsAllStrong = 0;
+				  }
+
+				  if(subsAllStrong == 1) {
+					  found = 1;
+					  bestP = bestP/mul;
+					  break;
+				  }
+		  }
 	  }
-
-	  lagArray[p-MINP] = ac / sqrt( sumSqBeg * sumSqEnd );
-	  //Period/num of Samples long is array's max + MINP
-
-	  //Find peak
-	  int bestP = minP;
-	  for ( int p = minP; p <= maxP; p++ ) {
-		  if (lagArray[p] > lagArray[bestP])
-			  bestP = p;
-	  }
-
-	  //Could do some interpolating, not going to...
-
-	  //Check if freq found is a harmonic by looking at other peaks
-	  int maxMul = bestP/minP;
-	  int found = 0;
-	  for (int mul = maxMul; found == 0 && mul >= 1; mul--_ {
-			  int subsAllStrong = 1;
-
-			  //For each multiple...
-			  for (int k = 1; k < mul; k++) {
-				  int subMulP = int(k*bestP/mul+0.5);
-				  if ( lagArray[subMulP] < SUBMULTHRESH*lagArray[bestP] )
-					  subsAllStrong = 0;
-			  }
-
-			  if(subsAllStrong == 1) {
-				  found = 1;
-				  bestP = bestP/mul;
-				  break;
-			  }
-	  }
-  }
-
-  //bestP is our answer!
+	  return bestP;
+	  //bestP is our answer!
+}
 
 
 //Variance calculation of TunerArray
-double compute_variance(void)
-{
-  double   var;         // Computed variance value to be returned
-  int      i;           // Loop counter
-
-  // Loop to compute variance
-  var = 0.0;
-  for (i=0; i<N; i++)
-    var = var + (pow((X[i] - Mean), 2.0) / N);
-
-  return(var);
-}
+//double compute_variance(void)
+//{
+//  double   var;         // Computed variance value to be returned
+//  int      i;           // Loop counter
+//
+//  // Loop to compute variance
+//  var = 0.0;
+//  for (i=0; i<N; i++)
+//    var = var + (pow((X[i] - Mean), 2.0) / N);
+//
+//  return(var);
+//}
 
 
 //Calculate mean of TunerArray values
-double compute_mean(void)
-{
-  double   mean;        // Computed mean value to be returned
-  int      i;           // Loop counter
-
-  // Loop to compute mean
-  mean = 0.0;
-  for (i=0; i<N; i++)
-    mean = mean + (X[i] / N);
-
-  return(mean);
-}
+//double compute_mean(void)
+//{
+//  double   mean;        // Computed mean value to be returned
+//  int      i;           // Loop counter
+//
+//  // Loop to compute mean
+//  mean = 0.0;
+//  for (i=0; i<N; i++)
+//    mean = mean + (X[i] / N);
+//
+//  return(mean);
+//}
 
 
 //Autocorrelation function
