@@ -11,12 +11,12 @@
 // will act on the array and produce a frequency
 
 #define SAMPLERATE 22550
-#define UPDATERATE 50 //Has to be less than 30?
+#define UPDATERATE 40 //Has to be less than 30?
 #define PI 3.14159256
 #define MAXFREQ 350.0	//Highest note we're reaching (F above E4)
 #define MINFREQ 63.0	//Lowest note we're reaching (B below E2)
 #define MAXP 360 // 22250/63 = 353 + some room = number of samples in a period
-#define MINP 55 // 22250/350 = 63 - room
+#define MINP 55 // 22250/350 = 63 - room = min number of samples
 #define SUBMULTTHRESH 0.90
 
 //some global variables I have already all at predetermined length of numSamples
@@ -26,7 +26,7 @@
 #define numSamples SAMPLERATE/UPDATERATE
 
 static int lagArray[numSamples] ; //My working array
-
+static double pitch;
 double     Mean;                   // Mean of series X
 double     Variance;               // Variance of series X
 
@@ -158,7 +158,7 @@ double     Variance;               // Variance of series X
 //Calculate lag amount - how many samples necessary to cover desired frequency range
 //A signal at 350Hz will repeat after 126 samples, at 63Hz, 700 samples
 /*At the fast freq, semitones are only 15 sample apart...
- *
+ *At 22,250 samples per second, a 63Hz signal will repeat after 350 samples, a 350Hz signal will repeat after 63
  * At lower ones they are 40 apart..
  */
 //Array A/B holds .5 seconds worth.
@@ -169,7 +169,27 @@ double     Variance;               // Variance of series X
 //Variance = compute_variance();
 
 // Compute and output AC value (rho) for series X of length N
-int autocorrelation(){
+
+void *algorithmThread(void *arg){
+
+	if(currentArray=='A'){
+		pthread_mutex_lock(&mutexB);
+		pitch = autoCorrelation(tunerArrayB);
+		pthread_mutex_unlock(&mutexB);
+	}
+	else if(currentArray=='B'){
+		pthread_mutex_lock(&mutexA);
+		pitch = autoCorrelation(tunerArrayA);
+		pthread_mutex_unlock(&mutexA);
+	}
+
+}
+
+
+
+
+
+double autoCorrelation(){
 	int bestP = MINP;
 	int p;
 	  for (p=MINP-1; p<=MAXP+1; p++)
@@ -221,8 +241,8 @@ int autocorrelation(){
 		  }
 	  }
 	  printf("Best phase lag is %d", bestP);
-	  return bestP;
-	  //bestP is our answer!
+	  //return bestP;
+	  return SAMPLERATE/bestP;
 }
 
 
