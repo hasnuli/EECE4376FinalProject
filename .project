@@ -3,6 +3,7 @@
 	<name>EECE4376FinalProject</name>
 	<comment></comment>
 	<projects>
+		<project>BBBIO</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

@@ -25,11 +25,12 @@ endif
 # All Target
 all: EECE4376FinalProject
 
+
 # Tool invocations
 EECE4376FinalProject: $(OBJS) $(USER_OBJS)
 	@echo 'Building target: $@'
 	@echo 'Invoking: Cross GCC Linker'
-	arm-linux-gnueabihf-gcc  -o "EECE4376FinalProject" $(OBJS) $(USER_OBJS) $(LIBS)
+	arm-linux-gnueabihf-gcc -L"C:\Users\PC\Google Drive\Eclipse workspace\BBBIO" -o "EECE4376FinalProject" $(OBJS) $(USER_OBJS) $(LIBS)
 	@echo 'Finished building target: $@'
 	@echo ' '
 

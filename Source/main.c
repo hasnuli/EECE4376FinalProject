@@ -40,8 +40,7 @@
 #define SUBMULTTHRESH 				0.90
 #define numSamples 					SAMPLERATE/UPDATERATE
 
-static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE
-		* BIT_DEPTH * 60 * 3) + 2;
+static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE* BIT_DEPTH * 60 * 3) + 2;
 static char tunerArrayAChar[TUNER_ARRAY_SIZE];
 static char tunerArrayBChar[TUNER_ARRAY_SIZE];
 static int tunerArrayA[TUNER_ARRAY_SIZE / BIT_DEPTH];
@@ -158,7 +157,7 @@ void *recordingThreadBody(void *arg) {
 		pthread_mutex_unlock(&stateMutex);
 		char recordingArray[RECORDING_ARRAY_SIZE];
 		FILE* outfile;
-		readAudioData(RECORDING_ARRAY_SIZE, recordingArray, 0);
+		readAudioData(RECORDING_ARRAY_SIZE, recordingArray);
 		outfile = fopen(FILE_NAME, "wb");
 		if (outfile == NULL) {
 			printf("Error opening file");
@@ -166,9 +165,9 @@ void *recordingThreadBody(void *arg) {
 		}
 		fwrite(&recordingArray, 1, RECORDING_ARRAY_SIZE, outfile);
 		fclose(outfile);
-		pthread_mutex_lock(stateMutex);
+		pthread_mutex_lock(&stateMutex);
 		state = 3;
-		pthread_mutex_unlock(stateMutex);
+		pthread_mutex_unlock(&stateMutex);
 	}
 	return NULL;
 }
@@ -189,7 +188,7 @@ void *readerThreadBody(void *arg) {
 		currentArray = 'A';
 		if (currentArray == 'A') {
 			pthread_mutex_lock(&mutexA);
-			readAudioData(TUNER_ARRAY_SIZE, tunerArrayAChar, 1);
+			readAudioData(TUNER_ARRAY_SIZE, tunerArrayAChar);
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayAChar[i] == 'f') {
 					break;
@@ -207,7 +206,7 @@ void *readerThreadBody(void *arg) {
 			currentArray = 'B';
 		} else {
 			pthread_mutex_lock(&mutexB);
-			readAudioData(TUNER_ARRAY_SIZE, tunerArrayBChar, 1);
+			readAudioData(TUNER_ARRAY_SIZE, tunerArrayBChar);
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayBChar[i] == 'f') {
 					break;
@@ -222,29 +221,6 @@ void *readerThreadBody(void *arg) {
 				pthread_mutex_unlock(&mutexB);
 			}
 			currentArray = 'A';
-		}
-	}
-	return NULL;
-}
-
-void *pdaThreadBody(void *arg) {
-	int oldstate;
-	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
-
-	while (1) {
-		pthread_mutex_lock(&stateMutex);
-		while (state != 0) {
-			pthread_cond_wait(&tunerStateCond, &stateMutex);
-		}
-		pthread_mutex_unlock(&stateMutex);
-		if (currentArray == 'A') {
-			pthread_mutex_lock(&mutexB);
-			pitch = autoCorrelation(tunerArrayB);
-			pthread_mutex_unlock(&mutexB);
-		} else if (currentArray == 'B') {
-			pthread_mutex_lock(&mutexA);
-			pitch = autoCorrelation(tunerArrayA);
-			pthread_mutex_unlock(&mutexA);
 		}
 	}
 	return NULL;
@@ -305,6 +281,31 @@ double autoCorrelation() {
 	return SAMPLERATE / bestP;
 }
 
+void *pdaThreadBody(void *arg) {
+	int oldstate;
+	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
+
+	while (1) {
+		pthread_mutex_lock(&stateMutex);
+		while (state != 0) {
+			pthread_cond_wait(&tunerStateCond, &stateMutex);
+		}
+		pthread_mutex_unlock(&stateMutex);
+		if (currentArray == 'A') {
+			pthread_mutex_lock(&mutexB);
+			pitch = autoCorrelation(tunerArrayB);
+			pthread_mutex_unlock(&mutexB);
+		} else if (currentArray == 'B') {
+			pthread_mutex_lock(&mutexA);
+			pitch = autoCorrelation(tunerArrayA);
+			pthread_mutex_unlock(&mutexA);
+		}
+	}
+	return NULL;
+}
+
+
+
 void *playbackThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
@@ -323,7 +324,6 @@ void *playbackThreadBody(void *arg) {
 
 		if ((fp = fopen(FILE_NAME, "rb")) == NULL) {
 			printf("Error opening file\n");
-			exit(1);
 		}
 
 		// Get the file length for playback
@@ -356,14 +356,32 @@ void *playbackThreadBody(void *arg) {
 				i = 0;
 			}
 		}
-		pthread_mutex_lock(stateMutex);
+		pthread_mutex_lock(&stateMutex);
 		state = 3;
-		pthread_mutex_unlock(stateMutex);
+		pthread_mutex_unlock(&stateMutex);
 	}
 	return NULL;
 }
 
 int main(void) {
+
+//	iolib_init();
+//			iolib_setdir(9, 25, BBBIO_DIR_IN);
+	//		iolib_setdir(9, 28, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+	//		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+	//		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+	//		iolib_setdir(8, 7, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 8, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 9, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 10, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 11, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 12, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 14, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 16, BBBIO_DIR_OUT);
+	//		iolib_setdir(8, 18, BBBIO_DIR_OUT);
+
+
 
 	pthread_t mainThread, recordingThread, playbackThread, pdaThread,
 	readerThread, screenThread;
@@ -417,18 +435,19 @@ int main(void) {
 		iolib_init();
 		iolib_setdir(9, 25, BBBIO_DIR_IN);
 		iolib_setdir(9, 28, BBBIO_DIR_OUT);
-		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
-		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
-		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
-		iolib_setdir(8, 7, BBBIO_DIR_OUT);
-		iolib_setdir(8, 8, BBBIO_DIR_OUT);
-		iolib_setdir(8, 9, BBBIO_DIR_OUT);
-		iolib_setdir(8, 10, BBBIO_DIR_OUT);
-		iolib_setdir(8, 11, BBBIO_DIR_OUT);
-		iolib_setdir(8, 12, BBBIO_DIR_OUT);
-		iolib_setdir(8, 14, BBBIO_DIR_OUT);
-		iolib_setdir(8, 16, BBBIO_DIR_OUT);
-		iolib_setdir(8, 18, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+//		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+//		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+//		iolib_setdir(8, 7, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 8, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 9, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 10, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 11, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 12, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 14, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 16, BBBIO_DIR_OUT);
+//		iolib_setdir(8, 18, BBBIO_DIR_OUT);
+
 
 		pthread_create(&recordingThread, &recorderAttr, recordingThreadBody,
 				NULL);
@@ -456,7 +475,7 @@ int main(void) {
 				while (is_high(8, 17)) {
 					// Only expected to press one button at a time
 				}
-				clock_gettime((CLOCK_REALTIME, &currentTime));
+				clock_gettime(CLOCK_REALTIME, &currentTime);
 				if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
 					onButton = 0;
 				} else if (currentTime.tv_nsec - firstPushed.tv_nsec
@@ -468,16 +487,16 @@ int main(void) {
 			}
 
 			if (stopButton == 1) {
-				pthread_mutex_lock(stateMutex);
+				pthread_mutex_lock(&stateMutex);
 				if (state == 1) {
 					state = 3;
 				} else if (state == 3) {
 					state = 1;
-					pthread_cond_broadacast(recordingStateCond);
+					pthread_cond_broadcast(&recordingStateCond);
 				} else if (state == 2) {
 					state = 3;
 				}
-				pthread_mutex_unlock(stateMutex);
+				pthread_mutex_unlock(&stateMutex);
 			}
 
 			if (is_high(8, 15) && prevModeButton == 1) { //needs to detect if pressed or released
@@ -495,14 +514,14 @@ int main(void) {
 			}
 
 			if (modeButton == 1) {
-				pthread_mutex_lock(stateMutex);
+				pthread_mutex_lock(&stateMutex);
 				if (state == 0) {
 					state = 3;
 				} else if (state == 3) {
 					state = 0;
 					pthread_cond_broadcast(&tunerStateCond);
 				}
-				pthread_mutex_unlock(stateMutex);
+				pthread_mutex_unlock(&stateMutex);
 			}
 
 			if (is_high(8, 13) && prevPlayButton == 1) { //needs to detect if pressed or released
@@ -520,12 +539,12 @@ int main(void) {
 			}
 
 			if (playButton == 1) {
-				pthread_mutex_lock(stateMutex);
+				pthread_mutex_lock(&stateMutex);
 				if (state == 3) {
 					state = 2;
-					pthread_cond_broadcast(playbackStateCond);
+					pthread_cond_broadcast(&playbackStateCond);
 				}
-				pthread_mutex_unlock(stateMutex);
+				pthread_mutex_unlock(&stateMutex);
 			}
 
 		}
@@ -548,10 +567,11 @@ int main(void) {
 		while (is_high(8, 17)) {
 			// Only expected to press one button at a time
 		}
-		clock_gettime((CLOCK_REALTIME, &currentTime));
+		clock_gettime(CLOCK_REALTIME, &currentTime);
 		if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
 			onButton = 1;
 		}
 	}
+	iolib_free();
 }
 

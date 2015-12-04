@@ -4,22 +4,13 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../Source/PitchDetectionAlg.c \
-../Source/Recording.c \
-../Source/main.c \
-../Source/playback.c 
+../Source/main.c 
 
 OBJS += \
-./Source/PitchDetectionAlg.o \
-./Source/Recording.o \
-./Source/main.o \
-./Source/playback.o 
+./Source/main.o 
 
 C_DEPS += \
-./Source/PitchDetectionAlg.d \
-./Source/Recording.d \
-./Source/main.d \
-./Source/playback.d 
+./Source/main.d 
 
 
 # Each subdirectory must supply rules for building sources it contributes
