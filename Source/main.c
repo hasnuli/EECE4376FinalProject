@@ -30,16 +30,18 @@
 #define	TUNER_ARRAY_SIZE			((TUNER_SAMPLERATE*BIT_DEPTH)/TUNER_UPDATE)+1
 #define FILE_NAME 					"file.bin"
 
+//Macros needed for Pitch Detection Algorithm
 #define SAMPLERATE 					22050
-#define UPDATERATE 					40 //Has to be less than 30?
+#define UPDATERATE 					40
 #define PI 							3.14159256
-#define MAXFREQ 					360.0	//Highest note we're reaching (F above E4)
-#define MINFREQ 					63.0	//Lowest note we're reaching (B below E2)
-#define MAXP 						360 // 22050/63 = 353 + some room = number of samples in a period
-#define MINP 						55 // 22050/350 = 63 - room = min number of samples
-#define SUBMULTTHRESH 				0.90
-#define numSamples 					SAMPLERATE/UPDATERATE
+#define MAXFREQ 					360.0	//Highest note freq (F above E4)
+#define MINFREQ 					63.0	//Lowest note (B below E2)
+#define MAXP 						360 	//(22,050/63) - Number of samples in the largest signal period (lowest freq)
+#define MINP 						55 		//(22,050/360) - Number of samples in the smallest signal period (highest freq)
+#define SUBMULTTHRESH 				0.90	//Threshold to determine harmonics
+#define numSamples 					SAMPLERATE/UPDATERATE	//Number of samples used in one algorithm run through
 
+//Arrays used for pitch algorithm and note reading
 static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE* BIT_DEPTH * 60 * 3) + 2;
 static char tunerArrayAChar[TUNER_ARRAY_SIZE];
 static char tunerArrayBChar[TUNER_ARRAY_SIZE];
@@ -49,17 +51,19 @@ static pthread_mutex_t mutexA = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t mutexB = PTHREAD_MUTEX_INITIALIZER;
 static char currentArray;
 
-static int lagArray[numSamples]; //My working array
-static double pitch = 0;
 
+static int lagArray[numSamples];	//Working array for algorithm
+static double pitch = 0;			//Calculated frequency of pitch
+
+//Initial button states
 static int stopButton = 0;
 static int modeButton = 0;
 static int playButton = 0;
 static int onButton = 1;
 
+//Mutexes and conditionals for each state
 static int state = 0;
 static pthread_mutex_t stateMutex = PTHREAD_MUTEX_INITIALIZER;
-
 //static pthread_mutex_t tunerStateMutex = PTHREAD_MUTEX_INITIALIZER;
 //static pthread_mutex_t recordingStateMutex = PTHREAD_MUTEX_INITIALIZER;
 //static pthread_mutex_t playbackStateMutex = PTHREAD_MUTEX_INITIALIZER;
