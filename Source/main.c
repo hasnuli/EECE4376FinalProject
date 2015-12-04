@@ -62,15 +62,14 @@ static int playButton = 0;
 static int onButton = 1;
 
 //Mutexes and conditionals for each state
+//0 = Tuner state, 1 = recording state, 2 = playback state, 3 = recorder state (idle), 4 = off
 static int state = 0;
 static pthread_mutex_t stateMutex = PTHREAD_MUTEX_INITIALIZER;
-//static pthread_mutex_t tunerStateMutex = PTHREAD_MUTEX_INITIALIZER;
-//static pthread_mutex_t recordingStateMutex = PTHREAD_MUTEX_INITIALIZER;
-//static pthread_mutex_t playbackStateMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t tunerStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t recordingStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t playbackStateCond = PTHREAD_COND_INITIALIZER;
 
+//Function to read in audio data from speaker through a pin on the audio cape
 void readAudioData(int mArraySize, char mArray[]) {
 
 	struct timespec currentTime;
@@ -84,6 +83,7 @@ void readAudioData(int mArraySize, char mArray[]) {
 	uint64_t timeDifferenceNS;
 	uint64_t audioPeriod;
 	uint64_t difference;
+	//Reads in different numbers of samples depending on if in tuner state (.02s) or recording state (up to 3 min)
 	if (state == 1) {
 		audioPeriod = RECORDING_PERIOD_NS;
 		difference = RECORDING_PERIOD_DIFFERENCE;
@@ -95,24 +95,25 @@ void readAudioData(int mArraySize, char mArray[]) {
 	system("");	// Put in any terminal commands needed to boot up and set Audio Cape
 
 	if (is_high(9, 25)) {
-		cur = '1';
-		mArray[curPos] = '1';
-		prev = '1';
+		cur = 1;
+		mArray[curPos] = 1;
+		prev = 1;
 	} else {
-		cur = '0';
-		mArray[curPos] = '0';
-		prev = '0';
+		cur = 0;
+		mArray[curPos] = 0;
+		prev = 0;
 	}
 	++curPos;
 	++bitsRead;
 	clock_gettime(CLOCK_REALTIME, &currentTime);
 	lastChange = currentTime;
 
-	while (curPos < mArraySize - 1 && (state == 1 && stopButton == 0)/*&& no buttons are pressed*/) {
+
+	while (curPos < mArraySize - 1 && (state == 1 && stopButton == 0)) {
 		if (is_high(9, 25)) {
-			cur = '1';
+			cur = 1;
 		} else {
-			cur = '0';
+			cur = 0;
 		}
 		if (cur != prev) {
 			clock_gettime(CLOCK_REALTIME, &currentTime);
@@ -149,26 +150,33 @@ void readAudioData(int mArraySize, char mArray[]) {
 	}
 }
 
+//Thread that will record music for playing back
 void *recordingThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
 
 	while (1) {
+		//Thread will run only if in recording state
 		pthread_mutex_lock(&stateMutex);
 		while (state != 1) {
 			pthread_cond_wait(&recordingStateCond, &stateMutex);
 		}
 		pthread_mutex_unlock(&stateMutex);
+
 		char recordingArray[RECORDING_ARRAY_SIZE];
 		FILE* outfile;
 		readAudioData(RECORDING_ARRAY_SIZE, recordingArray);
 		outfile = fopen(FILE_NAME, "wb");
+
 		if (outfile == NULL) {
 			printf("Error opening file");
 			return NULL;
 		}
+
 		fwrite(&recordingArray, 1, RECORDING_ARRAY_SIZE, outfile);
 		fclose(outfile);
+
+		//If done recording, go to recorder state
 		pthread_mutex_lock(&stateMutex);
 		state = 3;
 		pthread_mutex_unlock(&stateMutex);
@@ -176,23 +184,31 @@ void *recordingThreadBody(void *arg) {
 	return NULL;
 }
 
+//Thread that will read from a pin into an array to be used for pitch detection
 void *readerThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
 
+
 	while (1) {
+		//Will only run if in Tuner state
 		pthread_mutex_lock(&stateMutex);
 		while (state != 0) {
 			pthread_cond_wait(&tunerStateCond, &stateMutex);
 		}
 		pthread_mutex_unlock(&stateMutex);
+
 		int temp;
 		int i;
 		int j;
+
+		//Detects if Tuner Array A or B is available to write into
 		currentArray = 'A';
 		if (currentArray == 'A') {
 			pthread_mutex_lock(&mutexA);
 			readAudioData(TUNER_ARRAY_SIZE, tunerArrayAChar);
+
+			//Turn char array containing bits into an integer array
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayAChar[i] == 'f') {
 					break;
@@ -230,14 +246,18 @@ void *readerThreadBody(void *arg) {
 	return NULL;
 }
 
+//Algorithm to take an array and return a freq
 double autoCorrelation() {
 	int bestP = MINP;
 	int p;
+
+	//Will only search lags that produce a frequency from 63Hz-350Hz, the desired range
 	for (p = MINP - 1; p <= MAXP + 1; p++) {
 		double ac = 0.0;        // Standard auto-correlation
 		double sumSqBeg = 0.0;  // Sum of squares of beginning part
 		double sumSqEnd = 0.0;  // Sum of squares of ending part
 
+		//Convolves array with itself for autocorrelation
 		int i;
 		for (i = 0; i < (numSamples - p); i++) {
 			ac += lagArray[i] * lagArray[i + p];
@@ -245,27 +265,26 @@ double autoCorrelation() {
 			sumSqEnd += lagArray[i + p] * lagArray[i + p];
 		}
 
+		//Normalizes autocorrelation value to account for decreasing amplitude of unsustained notes
+		//LagArray holds autocorrelation values for each sample lagged
 		lagArray[p - MINP] = ac / sqrt(sumSqBeg * sumSqEnd);
-		//Period/num of Samples long is array's max + MINP
 
-		//Find peak
 
+		//Find highest peak
 		int j;
 		for (j = MINP; j <= MAXP; j++) {
 			if (lagArray[j] > lagArray[bestP])
 				bestP = j;
 		}
 
-		//Could do some interpolating, not going to...
-
-		//Check if freq found is a harmonic by looking at other peaks
+		//Check if freq found is a harmonic by looking at other peaks (must be above a threshold)
 		int maxMul = bestP / MINP;
 		int found = 0;
 		int mul;
 		for (mul = maxMul; found == 0 && mul >= 1; mul--) {
 			int subsAllStrong = 1;
 
-			//For each multiple...
+			//For each possible multiple...
 			int k;
 			for (k = 1; k < mul; k++) {
 				int subMulP = (int) (k * bestP / mul + 0.5);
@@ -273,6 +292,8 @@ double autoCorrelation() {
 					subsAllStrong = 0;
 			}
 
+			//If all multiples of freq are found to be strong, it is likely original peak was a harmonic/octave
+			//Calculate new peak
 			if (subsAllStrong == 1) {
 				found = 1;
 				bestP = bestP / mul;
@@ -280,21 +301,25 @@ double autoCorrelation() {
 			}
 		}
 	}
-	printf("Best phase lag is %d", bestP);
-	//return bestP;
+	printf("Best sample lag is %d", bestP);
+	//Calculate pitch by doing sampleRate/Period
 	return SAMPLERATE / bestP;
 }
 
+//Thread that will run pitch detection algorithm
 void *pdaThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
 
 	while (1) {
+		//Thread will only run if in the Tuner state
 		pthread_mutex_lock(&stateMutex);
 		while (state != 0) {
 			pthread_cond_wait(&tunerStateCond, &stateMutex);
 		}
 		pthread_mutex_unlock(&stateMutex);
+
+		//Determines which array is available to run the algorithm on
 		if (currentArray == 'A') {
 			pthread_mutex_lock(&mutexB);
 			pitch = autoCorrelation(tunerArrayB);
@@ -308,19 +333,20 @@ void *pdaThreadBody(void *arg) {
 	return NULL;
 }
 
-
-
+//Thread that will playback any recording
 void *playbackThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
 
 	while (1) {
+		//Will only run if in recording state
 		pthread_mutex_lock(&stateMutex);
 		while (state != 2) {
 			pthread_cond_wait(&playbackStateCond, &stateMutex);
 		}
 		pthread_mutex_unlock(&stateMutex);
-		// Declare variables needed for
+
+		// Declare variables needed for playback
 		unsigned char* buffer;
 		FILE *fp;
 		unsigned long fileLen;
@@ -348,7 +374,6 @@ void *playbackThreadBody(void *arg) {
 		fclose(fp);
 
 		// Run through the file and play the music
-
 		for (i = 0; (i < fileLen) && (state == 2); ++i) {
 			if (buffer[i] == '1')
 				pin_high(9, 28);
@@ -356,10 +381,12 @@ void *playbackThreadBody(void *arg) {
 				pin_low(9, 28);
 
 			nanosleep((const struct timespec[] ) { {0, 651.041667L}}, NULL);
-			if (playButton == 1) {// while play button is held down, it will replay the recorded file purposefully
+			if (playButton == 1) {// while play button is held down, it will restart playing back the file
 				i = 0;
 			}
 		}
+
+		//If recording is full played, the state will automatically switch to Recorder state (idle)
 		pthread_mutex_lock(&stateMutex);
 		state = 3;
 		pthread_mutex_unlock(&stateMutex);
@@ -369,24 +396,25 @@ void *playbackThreadBody(void *arg) {
 
 int main(void) {
 
-//	iolib_init();
-//			iolib_setdir(9, 25, BBBIO_DIR_IN);
-	//		iolib_setdir(9, 28, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
-	//		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
-	//		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
-	//		iolib_setdir(8, 7, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 8, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 9, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 10, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 11, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 12, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 14, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 16, BBBIO_DIR_OUT);
-	//		iolib_setdir(8, 18, BBBIO_DIR_OUT);
+	//All pins to read in or out from BeagleBone
+	iolib_init();
+			iolib_setdir(9, 25, BBBIO_DIR_IN);
+			iolib_setdir(9, 28, BBBIO_DIR_OUT);
+			iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+			iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+			iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+			iolib_setdir(8, 7, BBBIO_DIR_OUT);
+			iolib_setdir(8, 8, BBBIO_DIR_OUT);
+			iolib_setdir(8, 9, BBBIO_DIR_OUT);
+			iolib_setdir(8, 10, BBBIO_DIR_OUT);
+			iolib_setdir(8, 11, BBBIO_DIR_OUT);
+			iolib_setdir(8, 12, BBBIO_DIR_OUT);
+			iolib_setdir(8, 14, BBBIO_DIR_OUT);
+			iolib_setdir(8, 16, BBBIO_DIR_OUT);
+			iolib_setdir(8, 18, BBBIO_DIR_OUT);
 
 
-
+	//All threads needed for program
 	pthread_t mainThread, recordingThread, playbackThread, pdaThread,
 	readerThread, screenThread;
 	struct sched_param mainParam, recorderParam, playbackParam, pdaParam,
@@ -401,13 +429,14 @@ int main(void) {
 	readerParam.__sched_priority = 3;
 	screenParam.__sched_priority = 1;
 
+	//While the guitar tuner is ON
 	while (onButton == 1) {
-
+		//Initialize buttons and state
 		stopButton=0;
 		modeButton=0;
 		playButton=0;
 		state=1;
-
+		//Set up and start threads
 		mainThread = pthread_self();
 		pthread_setschedparam(mainThread, SCHED_OTHER, &mainParam);
 
@@ -439,18 +468,18 @@ int main(void) {
 		iolib_init();
 		iolib_setdir(9, 25, BBBIO_DIR_IN);
 		iolib_setdir(9, 28, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
-//		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
-//		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
-//		iolib_setdir(8, 7, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 8, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 9, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 10, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 11, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 12, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 14, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 16, BBBIO_DIR_OUT);
-//		iolib_setdir(8, 18, BBBIO_DIR_OUT);
+		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+		iolib_setdir(8, 7, BBBIO_DIR_OUT);
+		iolib_setdir(8, 8, BBBIO_DIR_OUT);
+		iolib_setdir(8, 9, BBBIO_DIR_OUT);
+		iolib_setdir(8, 10, BBBIO_DIR_OUT);
+		iolib_setdir(8, 11, BBBIO_DIR_OUT);
+		iolib_setdir(8, 12, BBBIO_DIR_OUT);
+		iolib_setdir(8, 14, BBBIO_DIR_OUT);
+		iolib_setdir(8, 16, BBBIO_DIR_OUT);
+		iolib_setdir(8, 18, BBBIO_DIR_OUT);
 
 
 		pthread_create(&recordingThread, &recorderAttr, recordingThreadBody,
@@ -467,6 +496,7 @@ int main(void) {
 		pthread_attr_destroy(&readerAttr);
 		pthread_attr_destroy(&screenAttr);
 
+		// Poll buttons to detect presses. Change states depending on button presses
 		// Only expected to press one button at a time
 		while (onButton == 1) {
 			int prevModeButton = 0;
@@ -474,6 +504,7 @@ int main(void) {
 			int prevPlayButton = 0;
 			int curPlayButton = 0;
 
+			//If the ON button is pressed
 			if (is_high(8, 17)) {
 				clock_gettime(CLOCK_REALTIME, &firstPushed);
 				while (is_high(8, 17)) {
@@ -481,15 +512,16 @@ int main(void) {
 				}
 				clock_gettime(CLOCK_REALTIME, &currentTime);
 				if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
-					onButton = 0;
+					onButton = 0;	//ON button pressed for 2 seconds, turns off
 				} else if (currentTime.tv_nsec - firstPushed.tv_nsec
-						> 1000000) {
+						> 1000000) { //If held for less than 2 seconds, a different state change occurs
 					stopButton = 1;
 				} else {
 					stopButton = 0;
 				}
 			}
 
+			//Change states depending on current state and Stop Button pressed
 			if (stopButton == 1) {
 				pthread_mutex_lock(&stateMutex);
 				if (state == 1) {
@@ -503,6 +535,7 @@ int main(void) {
 				pthread_mutex_unlock(&stateMutex);
 			}
 
+			//If Mode button is pressed
 			if (is_high(8, 15) && prevModeButton == 1) { //needs to detect if pressed or released
 				modeButton = 1;
 				prevModeButton = curModeButton;
@@ -517,6 +550,7 @@ int main(void) {
 				modeButton = 0;
 			}
 
+			//If Mode Button is pressed, change states accordingly
 			if (modeButton == 1) {
 				pthread_mutex_lock(&stateMutex);
 				if (state == 0) {
@@ -528,6 +562,7 @@ int main(void) {
 				pthread_mutex_unlock(&stateMutex);
 			}
 
+			//Detects if Play Button is pressed
 			if (is_high(8, 13) && prevPlayButton == 1) { //needs to detect if pressed or released
 				playButton = 1;
 				prevPlayButton = curPlayButton;
@@ -542,6 +577,7 @@ int main(void) {
 				playButton = 0;
 			}
 
+			//Change states depending on current state
 			if (playButton == 1) {
 				pthread_mutex_lock(&stateMutex);
 				if (state == 3) {
@@ -566,6 +602,7 @@ int main(void) {
 		pthread_join(screenThread, NULL);
 	}
 
+	//While in OFF state, detects if button is pressed for 2 seconds, guitar tuner will turn on and enter main while loop
 	if (is_high(8, 17)) {
 		clock_gettime(CLOCK_REALTIME, &firstPushed);
 		while (is_high(8, 17)) {
