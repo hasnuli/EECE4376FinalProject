@@ -116,14 +116,14 @@ void readAudioData(int mArraySize, char mArray[]) {
 			if (currentTime.tv_nsec < lastChange.tv_nsec) {
 				timeDifferenceNS = ((1000000000)
 						* (currentTime.tv_sec - 1 - lastChange.tv_sec))
-						+ ((1000000000 + currentTime.tv_nsec)
-								- lastChange.tv_nsec);
+								+ ((1000000000 + currentTime.tv_nsec)
+										- lastChange.tv_nsec);
 			} else {
 				timeDifferenceNS = ((1000000000)
 						* (currentTime.tv_sec - lastChange.tv_sec))
-						+ (currentTime.tv_nsec - lastChange.tv_nsec);
+								+ (currentTime.tv_nsec - lastChange.tv_nsec);
 			}
-			numOfPeriods = timeDifferenceNS / audioPeriod;
+			numOfPeriods = timeDifferenceNS / AUDIOCAPE_PERIOD_NS;
 			for (i = 0; (i < numOfPeriods) && (bitsRead < BIT_DEPTH); ++i) {
 				mArray[curPos] = cur;
 				++curPos;
@@ -132,9 +132,11 @@ void readAudioData(int mArraySize, char mArray[]) {
 			prev = cur;
 			if (bitsRead > BIT_DEPTH) {
 				bitsRead = 0;
-				currentTime.tv_nsec += difference;
-				clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &currentTime,
-				NULL);
+				if(difference!=0){
+					currentTime.tv_nsec += difference;
+					clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &currentTime,
+							NULL);
+				}
 			}
 		}
 	}
@@ -364,9 +366,9 @@ void *playbackThreadBody(void *arg) {
 int main(void) {
 
 	pthread_t mainThread, recordingThread, playbackThread, pdaThread,
-			readerThread, screenThread;
+	readerThread, screenThread;
 	struct sched_param mainParam, recorderParam, playbackParam, pdaParam,
-			readerParam, screenParam;
+	readerParam, screenParam;
 	pthread_attr_t recorderAttr, playbackAttr, pdaAttr, readerAttr, screenAttr;
 	struct timespec currentTime, firstPushed;
 
