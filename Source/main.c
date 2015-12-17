@@ -1,10 +1,13 @@
 /*
  * main.c
  *
- *  Created on: Dec 2, 2015
- *      Author: PC admin
+ * Created on: 	Dec 2, 2015
+ * Last Edited: Dec 16, 2015 
+ * Authors: 	Ilham Hasnul, Ben Tang, Anthony Sawyer, Quenton Stevenson
+ * Description:	Contains all code for Bed Tunes (EECE 4376 Final Project)
  */
 
+// Import required libraries
 #include <stdlib.h>
 #include <sys/time.h>
 #include <stdint.h>
@@ -15,33 +18,33 @@
 #include <time.h>
 #include "../../BBBIO/BBBio_lib/BBBiolib.h"
 
-// define needed constants
-#define BIT_DEPTH					16
+// Macros used for interaction with Audio Cape
+#define BIT_DEPTH			16
 #define RECORDING_SAMPLERATE		96000*BIT_DEPTH
-#define RECORDING_PERIOD_NS			((1/RECORDING_SAMPLERATE)*BIT_DEPTH*1000000000)
-#define TUNER_SAMPLERATE			22050*BIT_DEPTH
-#define TUNER_PERIOD_NS				((1/TUNER_SAMPLERATE)*BIT_DEPTH*1000000000)
-#define AUDIOCAPE_BITRATE			96000*BIT_DEPTH
-#define AUDIOCAPE_PERIOD_NS			(1/AUDIOCAPE_BITRATE)*1000000000
+#define RECORDING_PERIOD_NS		((1/RECORDING_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define TUNER_SAMPLERATE		22050*BIT_DEPTH
+#define TUNER_PERIOD_NS			((1/TUNER_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define AUDIOCAPE_BITRATE		96000*BIT_DEPTH
+#define AUDIOCAPE_PERIOD_NS		(1/AUDIOCAPE_BITRATE)*1000000000
 #define RECORDING_PERIOD_DIFFERENCE	RECORDING_PERIOD_NS-AUDIOCAPE_PERIOD_NS
 #define TUNER_PERIOD_DIFFERENCE		TUNER_PERIOD_NS-AUDIOCAPE_PERIOD_NS
-#define TUNER_UPDATE				40
+#define TUNER_UPDATE			40
 #define TUNER_UPDATE_PERIOD_NS		(1/TUNER_UPDATE)*1000000000
-#define	TUNER_ARRAY_SIZE			((TUNER_SAMPLERATE*BIT_DEPTH)/TUNER_UPDATE)+1
-#define FILE_NAME 					"file.bin"
+#define	TUNER_ARRAY_SIZE		((TUNER_SAMPLERATE*BIT_DEPTH)/TUNER_UPDATE)+1
+#define FILE_NAME 			"file.bin"
 
 //Macros needed for Pitch Detection Algorithm
 #define SAMPLERATE 					22050
 #define UPDATERATE 					40
-#define PI 							3.14159256
-#define MAXFREQ 					360.0	//Highest note freq (F above E4)
-#define MINFREQ 					63.0	//Lowest note (B below E2)
-#define MAXP 						360 	//(22,050/63) - Number of samples in the largest signal period (lowest freq)
-#define MINP 						55 		//(22,050/360) - Number of samples in the smallest signal period (highest freq)
-#define SUBMULTTHRESH 				0.90	//Threshold to determine harmonics
+#define PI 						3.14159256
+#define MAXFREQ 					360.0			//Highest note freq (F above E4)
+#define MINFREQ 					63.0			//Lowest note (B below E2)
+#define MAXP 						360 			//(22,050/63) - Number of samples in the largest signal period (lowest freq)
+#define MINP 						55 			//(22,050/360) - Number of samples in the smallest signal period (highest freq)
+#define SUBMULTTHRESH 					0.90			//Threshold to determine harmonics
 #define numSamples 					SAMPLERATE/UPDATERATE	//Number of samples used in one algorithm run through
 
-//Arrays used for pitch algorithm and note reading
+//Global variables used for pitch algorithm and note reading
 static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE* BIT_DEPTH * 60 * 3) + 2;
 static char tunerArrayAChar[TUNER_ARRAY_SIZE];
 static char tunerArrayBChar[TUNER_ARRAY_SIZE];
@@ -53,7 +56,7 @@ static char currentArray;
 
 
 static int lagArray[numSamples];	//Working array for algorithm
-static double pitch = 0;			//Calculated frequency of pitch
+static double pitch = 0;		//Calculated frequency of pitch
 
 //Initial button states
 static int stopButton = 0;
@@ -69,7 +72,7 @@ static pthread_cond_t tunerStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t recordingStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t playbackStateCond = PTHREAD_COND_INITIALIZER;
 
-//Function to read in audio data from speaker through a pin on the audio cape
+//Function to read in audio data from speaker through audio input pin on the audio cape
 void readAudioData(int mArraySize, char mArray[]) {
 
 	struct timespec currentTime;
@@ -83,7 +86,8 @@ void readAudioData(int mArraySize, char mArray[]) {
 	uint64_t timeDifferenceNS;
 	uint64_t audioPeriod;
 	uint64_t difference;
-	//Reads in different numbers of samples depending on if in tuner state (.02s) or recording state (up to 3 min)
+	
+	//Reads in different numbers for period between bits read from Audio Cape in different states
 	if (state == 1) {
 		audioPeriod = RECORDING_PERIOD_NS;
 		difference = RECORDING_PERIOD_DIFFERENCE;
@@ -91,9 +95,8 @@ void readAudioData(int mArraySize, char mArray[]) {
 		audioPeriod = TUNER_PERIOD_NS;
 		difference = TUNER_PERIOD_DIFFERENCE;
 	}
-	// Set any pin needed to boot up and set Audio Cape as outwards direction
-	system("");	// Put in any terminal commands needed to boot up and set Audio Cape
 
+	// Check initial reading of Audio Input pin
 	if (is_high(9, 25)) {
 		cur = 1;
 		mArray[curPos] = 1;
@@ -108,34 +111,42 @@ void readAudioData(int mArraySize, char mArray[]) {
 	clock_gettime(CLOCK_REALTIME, &currentTime);
 	lastChange = currentTime;
 
-
+	// Loops that continuosly poll the audio input pin and modifies the char array as needed
 	while (curPos < mArraySize - 1 && (state == 1 && stopButton == 0)) {
+		// Check current input from audio input pin
 		if (is_high(9, 25)) {
 			cur = 1;
 		} else {
 			cur = 0;
 		}
+		
+		// Check to see if whether there has been a change of input from audio input pin
 		if (cur != prev) {
+			
+			// Calculate time difference between changes of input from audio input pin
 			clock_gettime(CLOCK_REALTIME, &currentTime);
 			if (currentTime.tv_nsec < lastChange.tv_nsec) {
-				timeDifferenceNS = ((1000000000)
-						* (currentTime.tv_sec - 1 - lastChange.tv_sec))
-								+ ((1000000000 + currentTime.tv_nsec)
-										- lastChange.tv_nsec);
+				timeDifferenceNS = ((1000000000) * (currentTime.tv_sec - 1 - lastChange.tv_sec)) + ((1000000000 + currentTime.tv_nsec) - lastChange.tv_nsec);
 			} else {
 				timeDifferenceNS = ((1000000000)
 						* (currentTime.tv_sec - lastChange.tv_sec))
 								+ (currentTime.tv_nsec - lastChange.tv_nsec);
 			}
 			numOfPeriods = timeDifferenceNS / AUDIOCAPE_PERIOD_NS;
+			
+			// Modify character array as needed to store input from audio pin
 			for (i = 0; (i < numOfPeriods) && (bitsRead < BIT_DEPTH); ++i) {
 				mArray[curPos] = cur;
 				++curPos;
 				++bitsRead;
 			}
 			prev = cur;
+			
+			// Reset the bitsRead variable
 			if (bitsRead > BIT_DEPTH) {
 				bitsRead = 0;
+				
+				// If there is a difference between sampling rate of Audio Cape and current sampling rate, sleep
 				if(difference!=0){
 					currentTime.tv_nsec += difference;
 					clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &currentTime,
@@ -144,6 +155,8 @@ void readAudioData(int mArraySize, char mArray[]) {
 			}
 		}
 	}
+	
+	// If input has finished, end array with an 'f' char and fill remaining chars as literal 0
 	mArray[curPos] = 'f';
 	for (i = curPos + 1; i < mArraySize - 1; ++i) {
 		mArray[i] = 0;
@@ -163,16 +176,17 @@ void *recordingThreadBody(void *arg) {
 		}
 		pthread_mutex_unlock(&stateMutex);
 
+		// Read in audio data from Audio Cape
 		char recordingArray[RECORDING_ARRAY_SIZE];
-		FILE* outfile;
 		readAudioData(RECORDING_ARRAY_SIZE, recordingArray);
+		
+		// Write audio data to file
+		FILE* outfile;
 		outfile = fopen(FILE_NAME, "wb");
-
 		if (outfile == NULL) {
 			printf("Error opening file");
 			return NULL;
 		}
-
 		fwrite(&recordingArray, 1, RECORDING_ARRAY_SIZE, outfile);
 		fclose(outfile);
 
@@ -184,7 +198,7 @@ void *recordingThreadBody(void *arg) {
 	return NULL;
 }
 
-//Thread that will read from a pin into an array to be used for pitch detection
+//Thread that will read from audio input pin into an array to be used for pitch detection
 void *readerThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
@@ -205,10 +219,12 @@ void *readerThreadBody(void *arg) {
 		//Detects if Tuner Array A or B is available to write into
 		currentArray = 'A';
 		if (currentArray == 'A') {
+			
+			// Read in audio data
 			pthread_mutex_lock(&mutexA);
 			readAudioData(TUNER_ARRAY_SIZE, tunerArrayAChar);
 
-			//Turn char array containing bits into an integer array
+			//Turn char array containing bits into an integer array for use of pitch detection algorithm
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayAChar[i] == 'f') {
 					break;
@@ -225,8 +241,12 @@ void *readerThreadBody(void *arg) {
 			pthread_mutex_unlock(&mutexA);
 			currentArray = 'B';
 		} else {
+			
+			// read in audio data
 			pthread_mutex_lock(&mutexB);
 			readAudioData(TUNER_ARRAY_SIZE, tunerArrayBChar);
+			
+			//Turn char array containing bits into an integer array for use of pitch detection algorithm
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayBChar[i] == 'f') {
 					break;
@@ -396,22 +416,22 @@ void *playbackThreadBody(void *arg) {
 
 int main(void) {
 
-	//All pins to read in or out from BeagleBone
+	//Set needed pins to read in or out from BeagleBone
 	iolib_init();
-			iolib_setdir(9, 25, BBBIO_DIR_IN);
-			iolib_setdir(9, 28, BBBIO_DIR_OUT);
-			iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
-			iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
-			iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
-			iolib_setdir(8, 7, BBBIO_DIR_OUT);
-			iolib_setdir(8, 8, BBBIO_DIR_OUT);
-			iolib_setdir(8, 9, BBBIO_DIR_OUT);
-			iolib_setdir(8, 10, BBBIO_DIR_OUT);
-			iolib_setdir(8, 11, BBBIO_DIR_OUT);
-			iolib_setdir(8, 12, BBBIO_DIR_OUT);
-			iolib_setdir(8, 14, BBBIO_DIR_OUT);
-			iolib_setdir(8, 16, BBBIO_DIR_OUT);
-			iolib_setdir(8, 18, BBBIO_DIR_OUT);
+	iolib_setdir(9, 25, BBBIO_DIR_IN);
+	iolib_setdir(9, 28, BBBIO_DIR_OUT);
+	iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+	iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+	iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+	iolib_setdir(8, 7, BBBIO_DIR_OUT);
+	iolib_setdir(8, 8, BBBIO_DIR_OUT);
+	iolib_setdir(8, 9, BBBIO_DIR_OUT);
+	iolib_setdir(8, 10, BBBIO_DIR_OUT);
+	iolib_setdir(8, 11, BBBIO_DIR_OUT);
+	iolib_setdir(8, 12, BBBIO_DIR_OUT);
+	iolib_setdir(8, 14, BBBIO_DIR_OUT);
+	iolib_setdir(8, 16, BBBIO_DIR_OUT);
+	iolib_setdir(8, 18, BBBIO_DIR_OUT);
 
 
 	//All threads needed for program
@@ -588,7 +608,8 @@ int main(void) {
 			}
 
 		}
-
+		
+		// Cancel all threads when device is tured off
 		pthread_cancel(recordingThread);
 		pthread_cancel(playbackThread);
 		pthread_cancel(pdaThread);
