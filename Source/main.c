@@ -45,7 +45,8 @@
 #define numSamples 					SAMPLERATE/UPDATERATE	//Number of samples used in one algorithm run through
 
 //Global variables used for pitch algorithm and note reading
-static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE* BIT_DEPTH * 60 * 3) + 2;
+static const uint64_t RECORDING_ARRAY_SIZE = ((uint64_t) RECORDING_SAMPLERATE
+		* BIT_DEPTH * 60 * 3) + 2;
 static char tunerArrayAChar[TUNER_ARRAY_SIZE];
 static char tunerArrayBChar[TUNER_ARRAY_SIZE];
 static int tunerArrayA[TUNER_ARRAY_SIZE / BIT_DEPTH];
@@ -53,7 +54,6 @@ static int tunerArrayB[TUNER_ARRAY_SIZE / BIT_DEPTH];
 static pthread_mutex_t mutexA = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t mutexB = PTHREAD_MUTEX_INITIALIZER;
 static char currentArray;
-
 
 static int lagArray[numSamples];	//Working array for algorithm
 static double pitch = 0;		//Calculated frequency of pitch
@@ -66,8 +66,8 @@ static int onButton = 0;
 
 //Mutexes and conditionals for each state
 //0 = Tuner state, 1 = recording state, 2 = playback state, 3 = recorder state (idle), 4 = off
-static int state = 0;
-static pthread_mutex_t stateMutex = PTHREAD_MUTEX_INITIALIZER;
+extern static int state = 0;
+extern static pthread_mutex_t stateMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t tunerStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t recordingStateCond = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t playbackStateCond = PTHREAD_COND_INITIALIZER;
@@ -86,7 +86,7 @@ void readAudioData(int mArraySize, char mArray[]) {
 	uint64_t timeDifferenceNS;
 	uint64_t audioPeriod;
 	uint64_t difference;
-	
+
 	//Reads in different numbers for period between bits read from Audio Cape in different states
 	if (state == 1) {
 		audioPeriod = RECORDING_PERIOD_NS;
@@ -119,21 +119,24 @@ void readAudioData(int mArraySize, char mArray[]) {
 		} else {
 			cur = 0;
 		}
-		
+
 		// Check to see if whether there has been a change of input from audio input pin
 		if (cur != prev) {
-			
+
 			// Calculate time difference between changes of input from audio input pin
 			clock_gettime(CLOCK_REALTIME, &currentTime);
 			if (currentTime.tv_nsec < lastChange.tv_nsec) {
-				timeDifferenceNS = ((1000000000) * (currentTime.tv_sec - 1 - lastChange.tv_sec)) + ((1000000000 + currentTime.tv_nsec) - lastChange.tv_nsec);
+				timeDifferenceNS = ((1000000000)
+						* (currentTime.tv_sec - 1 - lastChange.tv_sec))
+						+ ((1000000000 + currentTime.tv_nsec)
+								- lastChange.tv_nsec);
 			} else {
 				timeDifferenceNS = ((1000000000)
 						* (currentTime.tv_sec - lastChange.tv_sec))
-								+ (currentTime.tv_nsec - lastChange.tv_nsec);
+						+ (currentTime.tv_nsec - lastChange.tv_nsec);
 			}
 			numOfPeriods = timeDifferenceNS / AUDIOCAPE_PERIOD_NS;
-			
+
 			// Modify character array as needed to store input from audio pin
 			for (i = 0; (i < numOfPeriods) && (bitsRead < BIT_DEPTH); ++i) {
 				mArray[curPos] = cur;
@@ -141,21 +144,21 @@ void readAudioData(int mArraySize, char mArray[]) {
 				++bitsRead;
 			}
 			prev = cur;
-			
+
 			// Reset the bitsRead variable
 			if (bitsRead > BIT_DEPTH) {
 				bitsRead = 0;
-				
+
 				// If there is a difference between sampling rate of Audio Cape and current sampling rate, sleep
-				if(difference!=0){
+				if (difference != 0) {
 					currentTime.tv_nsec += difference;
 					clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &currentTime,
-							NULL);
+					NULL);
 				}
 			}
 		}
 	}
-	
+
 	// If input has finished, end array with an 'f' char and fill remaining chars as literal 0
 	mArray[curPos] = 'f';
 	for (i = curPos + 1; i < mArraySize - 1; ++i) {
@@ -179,7 +182,7 @@ void *recordingThreadBody(void *arg) {
 		// Read in audio data from Audio Cape
 		char recordingArray[RECORDING_ARRAY_SIZE];
 		readAudioData(RECORDING_ARRAY_SIZE, recordingArray);
-		
+
 		// Write audio data to file
 		FILE* outfile;
 		outfile = fopen(FILE_NAME, "wb");
@@ -203,7 +206,6 @@ void *readerThreadBody(void *arg) {
 	int oldstate;
 	pthread_setcanceltype(PTHREAD_CANCEL_ENABLE, &oldstate);
 
-
 	while (1) {
 		//Will only run if in Tuner state
 		pthread_mutex_lock(&stateMutex);
@@ -219,7 +221,7 @@ void *readerThreadBody(void *arg) {
 		//Detects if Tuner Array A or B is available to write into
 		currentArray = 'A';
 		if (currentArray == 'A') {
-			
+
 			// Read in audio data
 			pthread_mutex_lock(&mutexA);
 			readAudioData(TUNER_ARRAY_SIZE, tunerArrayAChar);
@@ -241,11 +243,11 @@ void *readerThreadBody(void *arg) {
 			pthread_mutex_unlock(&mutexA);
 			currentArray = 'B';
 		} else {
-			
+
 			// read in audio data
 			pthread_mutex_lock(&mutexB);
 			readAudioData(TUNER_ARRAY_SIZE, tunerArrayBChar);
-			
+
 			//Turn char array containing bits into an integer array for use of pitch detection algorithm
 			for (i = 0; i < TUNER_ARRAY_SIZE; i += BIT_DEPTH) {
 				if (tunerArrayBChar[i] == 'f') {
@@ -290,39 +292,39 @@ double autoCorrelation() {
 		lagArray[p - MINP] = ac / sqrt(sumSqBeg * sumSqEnd);
 	}
 
-		//Find highest peak
-		int j;
-		for (j = MINP; j <= MAXP; j++) {
-			if (lagArray[j] > lagArray[bestP])
-				bestP = j;
+	//Find highest peak
+	int j;
+	for (j = MINP; j <= MAXP; j++) {
+		if (lagArray[j] > lagArray[bestP])
+			bestP = j;
+	}
+
+	//Check if freq found is a harmonic by looking at other peaks (must be above a threshold)
+	int maxMul = bestP / MINP;
+	int found = 0;
+	int mul;
+	for (mul = maxMul; found == 0 && mul >= 1; mul--) {
+		int subsAllStrong = 1;
+
+		//For each number of multiples, calculate corresponding frequencies
+		//See if frequencies are over a threshold of peak
+		int k;
+		for (k = 1; k < mul; k++) {
+			int subMulP = (int) (k * bestP / mul + 0.5);
+			if (lagArray[subMulP] < SUBMULTTHRESH * lagArray[bestP])
+				subsAllStrong = 0;
 		}
 
-		//Check if freq found is a harmonic by looking at other peaks (must be above a threshold)
-		int maxMul = bestP / MINP;
-		int found = 0;
-		int mul;
-		for (mul = maxMul; found == 0 && mul >= 1; mul--) {
-			int subsAllStrong = 1;
-
-			//For each number of multiples, calculate corresponding frequencies
-			//See if frequencies are over a threshold of peak
-			int k;
-			for (k = 1; k < mul; k++) {
-				int subMulP = (int) (k * bestP / mul + 0.5);
-				if (lagArray[subMulP] < SUBMULTTHRESH * lagArray[bestP])
-					subsAllStrong = 0;
-			}
-
-			//If all multiples of freq are found to be strong, it is likely original peak was a harmonic/octave
-			//Calculate new peak
-			if (subsAllStrong == 1) {
-				found = 1;
-				bestP = bestP / mul;
-				break;
-			}
+		//If all multiples of freq are found to be strong, it is likely original peak was a harmonic/octave
+		//Calculate new peak
+		if (subsAllStrong == 1) {
+			found = 1;
+			bestP = bestP / mul;
+			break;
 		}
+	}
 
-	printf("Selected frequency is %d", SAMPLERATE/bestP);
+	printf("Selected frequency is %d", SAMPLERATE / bestP);
 	//Calculate pitch by doing sampleRate/Period
 	return SAMPLERATE / bestP;
 }
@@ -434,12 +436,11 @@ int main(void) {
 	iolib_setdir(8, 16, BBBIO_DIR_OUT);
 	iolib_setdir(8, 18, BBBIO_DIR_OUT);
 
-
 	//All threads needed for program
 	pthread_t mainThread, recordingThread, playbackThread, pdaThread,
-	readerThread, screenThread;
+			readerThread, screenThread;
 	struct sched_param mainParam, recorderParam, playbackParam, pdaParam,
-	readerParam, screenParam;
+			readerParam, screenParam;
 	pthread_attr_t recorderAttr, playbackAttr, pdaAttr, readerAttr, screenAttr;
 	struct timespec currentTime, firstPushed;
 
@@ -453,10 +454,10 @@ int main(void) {
 		//While the guitar tuner is ON
 		while (onButton == 1) {
 			//Initialize buttons and state
-			stopButton=0;
-			modeButton=0;
-			playButton=0;
-			state=1;
+			stopButton = 0;
+			modeButton = 0;
+			playButton = 0;
+			state = 1;
 			//Set up and start threads
 			mainThread = pthread_self();
 			pthread_setschedparam(mainThread, SCHED_OTHER, &mainParam);
@@ -502,11 +503,10 @@ int main(void) {
 			iolib_setdir(8, 16, BBBIO_DIR_OUT);
 			iolib_setdir(8, 18, BBBIO_DIR_OUT);
 
-
 			pthread_create(&recordingThread, &recorderAttr, recordingThreadBody,
-					NULL);
+			NULL);
 			pthread_create(&playbackThread, &playbackAttr, playbackThreadBody,
-					NULL);
+			NULL);
 			pthread_create(&pdaThread, &pdaAttr, pdaThreadBody, NULL);
 			pthread_create(&readerThread, &readerAttr, readerThreadBody, NULL);
 			//pthread_create(&screenThread,&screenAttr,screenThreadBody,NULL);
@@ -533,7 +533,7 @@ int main(void) {
 					}
 					clock_gettime(CLOCK_REALTIME, &currentTime);
 					if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
-						onButton = 0;	//ON button pressed for 2 seconds, turns off
+						onButton = 0;//ON button pressed for 2 seconds, turns off
 					} else if (currentTime.tv_nsec - firstPushed.tv_nsec
 							> 1000000) { //If held for less than 2 seconds, a different state change occurs
 						stopButton = 1;
