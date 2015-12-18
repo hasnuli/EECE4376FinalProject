@@ -19,29 +19,29 @@
 #include "../../BBBIO/BBBio_lib/BBBiolib.h"
 
 // Macros used for interaction with Audio Cape
-#define BIT_DEPTH			16
+#define BIT_DEPTH					16
 #define RECORDING_SAMPLERATE		96000*BIT_DEPTH
-#define RECORDING_PERIOD_NS		((1/RECORDING_SAMPLERATE)*BIT_DEPTH*1000000000)
-#define TUNER_SAMPLERATE		22050*BIT_DEPTH
-#define TUNER_PERIOD_NS			((1/TUNER_SAMPLERATE)*BIT_DEPTH*1000000000)
-#define AUDIOCAPE_BITRATE		96000*BIT_DEPTH
-#define AUDIOCAPE_PERIOD_NS		(1/AUDIOCAPE_BITRATE)*1000000000
+#define RECORDING_PERIOD_NS			((1/RECORDING_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define TUNER_SAMPLERATE			22050*BIT_DEPTH
+#define TUNER_PERIOD_NS				((1/TUNER_SAMPLERATE)*BIT_DEPTH*1000000000)
+#define AUDIOCAPE_BITRATE			96000*BIT_DEPTH
+#define AUDIOCAPE_PERIOD_NS			(1/AUDIOCAPE_BITRATE)*1000000000
 #define RECORDING_PERIOD_DIFFERENCE	RECORDING_PERIOD_NS-AUDIOCAPE_PERIOD_NS
 #define TUNER_PERIOD_DIFFERENCE		TUNER_PERIOD_NS-AUDIOCAPE_PERIOD_NS
-#define TUNER_UPDATE			40
+#define TUNER_UPDATE				40
 #define TUNER_UPDATE_PERIOD_NS		(1/TUNER_UPDATE)*1000000000
-#define	TUNER_ARRAY_SIZE		((TUNER_SAMPLERATE*BIT_DEPTH)/TUNER_UPDATE)+1
-#define FILE_NAME 			"file.bin"
+#define	TUNER_ARRAY_SIZE			((TUNER_SAMPLERATE*BIT_DEPTH)/TUNER_UPDATE)+1
+#define FILE_NAME 					"file.bin"
 
 //Macros needed for Pitch Detection Algorithm
 #define SAMPLERATE 					22050
 #define UPDATERATE 					40
-#define PI 						3.14159256
+#define PI 							3.14159256
 #define MAXFREQ 					360.0			//Highest note freq (F above E4)
 #define MINFREQ 					63.0			//Lowest note (B below E2)
 #define MAXP 						360 			//(22,050/63) - Number of samples in the largest signal period (lowest freq)
 #define MINP 						55 			//(22,050/360) - Number of samples in the smallest signal period (highest freq)
-#define SUBMULTTHRESH 					0.90			//Threshold to determine harmonics
+#define SUBMULTTHRESH 				0.90			//Threshold to determine harmonics
 #define numSamples 					SAMPLERATE/UPDATERATE	//Number of samples used in one algorithm run through
 
 //Global variables used for pitch algorithm and note reading
@@ -62,7 +62,7 @@ static double pitch = 0;		//Calculated frequency of pitch
 static int stopButton = 0;
 static int modeButton = 0;
 static int playButton = 0;
-static int onButton = 1;
+static int onButton = 0;
 
 //Mutexes and conditionals for each state
 //0 = Tuner state, 1 = recording state, 2 = playback state, 3 = recorder state (idle), 4 = off
@@ -288,7 +288,7 @@ double autoCorrelation() {
 		//Normalizes autocorrelation value to account for decreasing amplitude of unsustained notes
 		//LagArray holds autocorrelation values for each sample lagged
 		lagArray[p - MINP] = ac / sqrt(sumSqBeg * sumSqEnd);
-
+	}
 
 		//Find highest peak
 		int j;
@@ -304,7 +304,8 @@ double autoCorrelation() {
 		for (mul = maxMul; found == 0 && mul >= 1; mul--) {
 			int subsAllStrong = 1;
 
-			//For each possible multiple...
+			//For each number of multiples, calculate corresponding frequencies
+			//See if frequencies are over a threshold of peak
 			int k;
 			for (k = 1; k < mul; k++) {
 				int subMulP = (int) (k * bestP / mul + 0.5);
@@ -320,8 +321,8 @@ double autoCorrelation() {
 				break;
 			}
 		}
-	}
-	printf("Best sample lag is %d", bestP);
+
+	printf("Selected frequency is %d", SAMPLERATE/bestP);
 	//Calculate pitch by doing sampleRate/Period
 	return SAMPLERATE / bestP;
 }
@@ -448,190 +449,191 @@ int main(void) {
 	pdaParam.__sched_priority = 3;
 	readerParam.__sched_priority = 3;
 	screenParam.__sched_priority = 1;
-
-	//While the guitar tuner is ON
-	while (onButton == 1) {
-		//Initialize buttons and state
-		stopButton=0;
-		modeButton=0;
-		playButton=0;
-		state=1;
-		//Set up and start threads
-		mainThread = pthread_self();
-		pthread_setschedparam(mainThread, SCHED_OTHER, &mainParam);
-
-		pthread_attr_init(&recorderAttr);
-		pthread_attr_setinheritsched(&recorderAttr, PTHREAD_EXPLICIT_SCHED);
-		pthread_attr_setschedpolicy(&recorderAttr, SCHED_OTHER);
-		pthread_attr_setschedparam(&recorderAttr, &recorderParam);
-
-		pthread_attr_init(&playbackAttr);
-		pthread_attr_setinheritsched(&playbackAttr, PTHREAD_EXPLICIT_SCHED);
-		pthread_attr_setschedpolicy(&playbackAttr, SCHED_OTHER);
-		pthread_attr_setschedparam(&playbackAttr, &playbackParam);
-
-		pthread_attr_init(&pdaAttr);
-		pthread_attr_setinheritsched(&pdaAttr, PTHREAD_EXPLICIT_SCHED);
-		pthread_attr_setschedpolicy(&pdaAttr, SCHED_OTHER);
-		pthread_attr_setschedparam(&pdaAttr, &pdaParam);
-
-		pthread_attr_init(&readerAttr);
-		pthread_attr_setinheritsched(&readerAttr, PTHREAD_EXPLICIT_SCHED);
-		pthread_attr_setschedpolicy(&readerAttr, SCHED_OTHER);
-		pthread_attr_setschedparam(&readerAttr, &readerParam);
-
-		pthread_attr_init(&screenAttr);
-		pthread_attr_setinheritsched(&screenAttr, PTHREAD_EXPLICIT_SCHED);
-		pthread_attr_setschedpolicy(&screenAttr, SCHED_OTHER);
-		pthread_attr_setschedparam(&screenAttr, &screenParam);
-
-		iolib_init();
-		iolib_setdir(9, 25, BBBIO_DIR_IN);
-		iolib_setdir(9, 28, BBBIO_DIR_OUT);
-		iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
-		iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
-		iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
-		iolib_setdir(8, 7, BBBIO_DIR_OUT);
-		iolib_setdir(8, 8, BBBIO_DIR_OUT);
-		iolib_setdir(8, 9, BBBIO_DIR_OUT);
-		iolib_setdir(8, 10, BBBIO_DIR_OUT);
-		iolib_setdir(8, 11, BBBIO_DIR_OUT);
-		iolib_setdir(8, 12, BBBIO_DIR_OUT);
-		iolib_setdir(8, 14, BBBIO_DIR_OUT);
-		iolib_setdir(8, 16, BBBIO_DIR_OUT);
-		iolib_setdir(8, 18, BBBIO_DIR_OUT);
-
-
-		pthread_create(&recordingThread, &recorderAttr, recordingThreadBody,
-				NULL);
-		pthread_create(&playbackThread, &playbackAttr, playbackThreadBody,
-				NULL);
-		pthread_create(&pdaThread, &pdaAttr, pdaThreadBody, NULL);
-		pthread_create(&readerThread, &readerAttr, readerThreadBody, NULL);
-		//pthread_create(&screenThread,&screenAttr,screenThreadBody,NULL);
-
-		pthread_attr_destroy(&recorderAttr);
-		pthread_attr_destroy(&playbackAttr);
-		pthread_attr_destroy(&pdaAttr);
-		pthread_attr_destroy(&readerAttr);
-		pthread_attr_destroy(&screenAttr);
-
-		// Poll buttons to detect presses. Change states depending on button presses
-		// Only expected to press one button at a time
+	while (onButton == 0) {
+		//While the guitar tuner is ON
 		while (onButton == 1) {
-			int prevModeButton = 0;
-			int curModeButton = 0;
-			int prevPlayButton = 0;
-			int curPlayButton = 0;
+			//Initialize buttons and state
+			stopButton=0;
+			modeButton=0;
+			playButton=0;
+			state=1;
+			//Set up and start threads
+			mainThread = pthread_self();
+			pthread_setschedparam(mainThread, SCHED_OTHER, &mainParam);
 
-			//If the ON button is pressed
-			if (is_high(8, 17)) {
-				clock_gettime(CLOCK_REALTIME, &firstPushed);
-				while (is_high(8, 17)) {
-					// Only expected to press one button at a time
-				}
-				clock_gettime(CLOCK_REALTIME, &currentTime);
-				if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
-					onButton = 0;	//ON button pressed for 2 seconds, turns off
-				} else if (currentTime.tv_nsec - firstPushed.tv_nsec
-						> 1000000) { //If held for less than 2 seconds, a different state change occurs
-					stopButton = 1;
-				} else {
-					stopButton = 0;
-				}
-			}
+			pthread_attr_init(&recorderAttr);
+			pthread_attr_setinheritsched(&recorderAttr, PTHREAD_EXPLICIT_SCHED);
+			pthread_attr_setschedpolicy(&recorderAttr, SCHED_OTHER);
+			pthread_attr_setschedparam(&recorderAttr, &recorderParam);
 
-			//Change states depending on current state and Stop Button pressed
-			if (stopButton == 1) {
-				pthread_mutex_lock(&stateMutex);
-				if (state == 1) {
-					state = 3;
-				} else if (state == 3) {
-					state = 1;
-					pthread_cond_broadcast(&recordingStateCond);
-				} else if (state == 2) {
-					state = 3;
-				}
-				pthread_mutex_unlock(&stateMutex);
-			}
+			pthread_attr_init(&playbackAttr);
+			pthread_attr_setinheritsched(&playbackAttr, PTHREAD_EXPLICIT_SCHED);
+			pthread_attr_setschedpolicy(&playbackAttr, SCHED_OTHER);
+			pthread_attr_setschedparam(&playbackAttr, &playbackParam);
 
-			//If Mode button is pressed
-			if (is_high(8, 15) && prevModeButton == 1) { //needs to detect if pressed or released
-				modeButton = 1;
-				prevModeButton = curModeButton;
-				curModeButton = 1;
-			} else {
-				prevModeButton = curModeButton;
-				if (is_high(8, 15)) {
+			pthread_attr_init(&pdaAttr);
+			pthread_attr_setinheritsched(&pdaAttr, PTHREAD_EXPLICIT_SCHED);
+			pthread_attr_setschedpolicy(&pdaAttr, SCHED_OTHER);
+			pthread_attr_setschedparam(&pdaAttr, &pdaParam);
+
+			pthread_attr_init(&readerAttr);
+			pthread_attr_setinheritsched(&readerAttr, PTHREAD_EXPLICIT_SCHED);
+			pthread_attr_setschedpolicy(&readerAttr, SCHED_OTHER);
+			pthread_attr_setschedparam(&readerAttr, &readerParam);
+
+			pthread_attr_init(&screenAttr);
+			pthread_attr_setinheritsched(&screenAttr, PTHREAD_EXPLICIT_SCHED);
+			pthread_attr_setschedpolicy(&screenAttr, SCHED_OTHER);
+			pthread_attr_setschedparam(&screenAttr, &screenParam);
+
+			iolib_init();
+			iolib_setdir(9, 25, BBBIO_DIR_IN);
+			iolib_setdir(9, 28, BBBIO_DIR_OUT);
+			iolib_setdir(8, 13, BBBIO_DIR_IN);	// Play Button
+			iolib_setdir(8, 15, BBBIO_DIR_IN);	// Mode Button
+			iolib_setdir(8, 17, BBBIO_DIR_IN);	// Stop Button
+			iolib_setdir(8, 7, BBBIO_DIR_OUT);
+			iolib_setdir(8, 8, BBBIO_DIR_OUT);
+			iolib_setdir(8, 9, BBBIO_DIR_OUT);
+			iolib_setdir(8, 10, BBBIO_DIR_OUT);
+			iolib_setdir(8, 11, BBBIO_DIR_OUT);
+			iolib_setdir(8, 12, BBBIO_DIR_OUT);
+			iolib_setdir(8, 14, BBBIO_DIR_OUT);
+			iolib_setdir(8, 16, BBBIO_DIR_OUT);
+			iolib_setdir(8, 18, BBBIO_DIR_OUT);
+
+
+			pthread_create(&recordingThread, &recorderAttr, recordingThreadBody,
+					NULL);
+			pthread_create(&playbackThread, &playbackAttr, playbackThreadBody,
+					NULL);
+			pthread_create(&pdaThread, &pdaAttr, pdaThreadBody, NULL);
+			pthread_create(&readerThread, &readerAttr, readerThreadBody, NULL);
+			//pthread_create(&screenThread,&screenAttr,screenThreadBody,NULL);
+
+			pthread_attr_destroy(&recorderAttr);
+			pthread_attr_destroy(&playbackAttr);
+			pthread_attr_destroy(&pdaAttr);
+			pthread_attr_destroy(&readerAttr);
+			pthread_attr_destroy(&screenAttr);
+
+			// Poll buttons to detect presses. Change states depending on button presses
+			// Only expected to press one button at a time
+			while (onButton == 1) {
+				int prevModeButton = 0;
+				int curModeButton = 0;
+				int prevPlayButton = 0;
+				int curPlayButton = 0;
+
+				//If the ON button is pressed
+				if (is_high(8, 17)) {
+					clock_gettime(CLOCK_REALTIME, &firstPushed);
+					while (is_high(8, 17)) {
+						// Only expected to press one button at a time
+					}
+					clock_gettime(CLOCK_REALTIME, &currentTime);
+					if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
+						onButton = 0;	//ON button pressed for 2 seconds, turns off
+					} else if (currentTime.tv_nsec - firstPushed.tv_nsec
+							> 1000000) { //If held for less than 2 seconds, a different state change occurs
+						stopButton = 1;
+					} else {
+						stopButton = 0;
+					}
+				}
+
+				//Change states depending on current state and Stop Button pressed
+				if (stopButton == 1) {
+					pthread_mutex_lock(&stateMutex);
+					if (state == 1) {
+						state = 3;
+					} else if (state == 3) {
+						state = 1;
+						pthread_cond_broadcast(&recordingStateCond);
+					} else if (state == 2) {
+						state = 3;
+					}
+					pthread_mutex_unlock(&stateMutex);
+				}
+
+				//If Mode button is pressed
+				if (is_high(8, 15) && prevModeButton == 1) { //needs to detect if pressed or released
+					modeButton = 1;
+					prevModeButton = curModeButton;
 					curModeButton = 1;
 				} else {
-					curModeButton = 0;
+					prevModeButton = curModeButton;
+					if (is_high(8, 15)) {
+						curModeButton = 1;
+					} else {
+						curModeButton = 0;
+					}
+					modeButton = 0;
 				}
-				modeButton = 0;
-			}
 
-			//If Mode Button is pressed, change states accordingly
-			if (modeButton == 1) {
-				pthread_mutex_lock(&stateMutex);
-				if (state == 0) {
-					state = 3;
-				} else if (state == 3) {
-					state = 0;
-					pthread_cond_broadcast(&tunerStateCond);
+				//If Mode Button is pressed, change states accordingly
+				if (modeButton == 1) {
+					pthread_mutex_lock(&stateMutex);
+					if (state == 0) {
+						state = 3;
+					} else if (state == 3) {
+						state = 0;
+						pthread_cond_broadcast(&tunerStateCond);
+					}
+					pthread_mutex_unlock(&stateMutex);
 				}
-				pthread_mutex_unlock(&stateMutex);
-			}
 
-			//Detects if Play Button is pressed
-			if (is_high(8, 13) && prevPlayButton == 1) { //needs to detect if pressed or released
-				playButton = 1;
-				prevPlayButton = curPlayButton;
-				curPlayButton = 1;
-			} else {
-				prevPlayButton = curPlayButton;
-				if (is_high(8, 13)) {
+				//Detects if Play Button is pressed
+				if (is_high(8, 13) && prevPlayButton == 1) { //needs to detect if pressed or released
+					playButton = 1;
+					prevPlayButton = curPlayButton;
 					curPlayButton = 1;
 				} else {
-					curPlayButton = 0;
+					prevPlayButton = curPlayButton;
+					if (is_high(8, 13)) {
+						curPlayButton = 1;
+					} else {
+						curPlayButton = 0;
+					}
+					playButton = 0;
 				}
-				playButton = 0;
+
+				//Change states depending on current state
+				if (playButton == 1) {
+					pthread_mutex_lock(&stateMutex);
+					if (state == 3) {
+						state = 2;
+						pthread_cond_broadcast(&playbackStateCond);
+					}
+					pthread_mutex_unlock(&stateMutex);
+				}
+
 			}
 
-			//Change states depending on current state
-			if (playButton == 1) {
-				pthread_mutex_lock(&stateMutex);
-				if (state == 3) {
-					state = 2;
-					pthread_cond_broadcast(&playbackStateCond);
-				}
-				pthread_mutex_unlock(&stateMutex);
+			// Cancel all threads when device is tured off
+			pthread_cancel(recordingThread);
+			pthread_cancel(playbackThread);
+			pthread_cancel(pdaThread);
+			pthread_cancel(readerThread);
+			pthread_cancel(screenThread);
+
+			pthread_join(recordingThread, NULL);
+			pthread_join(playbackThread, NULL);
+			pthread_join(pdaThread, NULL);
+			pthread_join(readerThread, NULL);
+			pthread_join(screenThread, NULL);
+		}
+
+		//While in OFF state, detects if button is pressed for 2 seconds, guitar tuner will turn on and enter main while loop
+		if (is_high(8, 17)) {
+			clock_gettime(CLOCK_REALTIME, &firstPushed);
+			while (is_high(8, 17)) {
+				// Only expected to press one button at a time
 			}
-
-		}
-		
-		// Cancel all threads when device is tured off
-		pthread_cancel(recordingThread);
-		pthread_cancel(playbackThread);
-		pthread_cancel(pdaThread);
-		pthread_cancel(readerThread);
-		pthread_cancel(screenThread);
-
-		pthread_join(recordingThread, NULL);
-		pthread_join(playbackThread, NULL);
-		pthread_join(pdaThread, NULL);
-		pthread_join(readerThread, NULL);
-		pthread_join(screenThread, NULL);
-	}
-
-	//While in OFF state, detects if button is pressed for 2 seconds, guitar tuner will turn on and enter main while loop
-	if (is_high(8, 17)) {
-		clock_gettime(CLOCK_REALTIME, &firstPushed);
-		while (is_high(8, 17)) {
-			// Only expected to press one button at a time
-		}
-		clock_gettime(CLOCK_REALTIME, &currentTime);
-		if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
-			onButton = 1;
+			clock_gettime(CLOCK_REALTIME, &currentTime);
+			if (currentTime.tv_sec - firstPushed.tv_sec > 2) {
+				onButton = 1;
+			}
 		}
 	}
 	iolib_free();
